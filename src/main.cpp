@@ -8,19 +8,20 @@
 // =====================================================
 // VERSION INFORMATION
 // =====================================================
-const char* VERSION = "1.0.0";
-const int BUILD_NUMBER = 1;
+const char* VERSION = "2.0.0";
+const int BUILD_NUMBER = 2;
 
 // =====================================================
-// Wi-Fi Credentials
+// Wi-Fi Configuration
 // =====================================================
-const char* ssid = "301 TECH";
-const char* password = "qwerty301!!!";
+const char* ssid = "PLDT FIBR 5G";
+const char* password = "cheese_91125";
 
 // =====================================================
 // Pin Definitions
 // =====================================================
-const int LED_PIN = 2;
+const int LED1_PIN = 2;
+const int LED2_PIN = 4;
 
 // =====================================================
 // Objects
@@ -35,16 +36,17 @@ unsigned long ledOnCount = 0;
 bool lastLedState = false;
 
 // =====================================================
-// Date and Time Configuration
-// Philippines = UTC+8
+// Philippine Time
+// UTC +8
 // =====================================================
 const long GMT_OFFSET_SEC = 8 * 3600;
 const int DAYLIGHT_OFFSET_SEC = 0;
 
 // =====================================================
-// Get current date and time
+// Get Current Date and Time
 // =====================================================
 String getDateTime() {
+
   struct tm timeinfo;
 
   if (!getLocalTime(&timeinfo)) {
@@ -70,22 +72,29 @@ void setup() {
 
   Serial.begin(115200);
 
-  pinMode(LED_PIN, OUTPUT);
-  digitalWrite(LED_PIN, LOW);
+  // ===================================================
+  // Initialize LEDs
+  // ===================================================
+  pinMode(LED1_PIN, OUTPUT);
+  pinMode(LED2_PIN, OUTPUT);
+
+  digitalWrite(LED1_PIN, LOW);
+  digitalWrite(LED2_PIN, LOW);
 
   // ===================================================
   // 1. Initialize Preferences
   // ===================================================
   preferences.begin("led-counter", false);
 
-  // If the ESP32 has been completely erased,
-  // the counter will start at 50.
-  ledOnCount = preferences.getULong("counter", 50);
+  // Load saved counter
+  // If no counter exists, start at 0
+  ledOnCount = preferences.getULong("counter", 0);
 
   Serial.println();
-  Serial.println("=================================");
+  Serial.println("======================================");
   Serial.println("ESP32 LED COUNTER");
-  Serial.println("=================================");
+  Serial.println("======================================");
+
   Serial.print("Version: ");
   Serial.println(VERSION);
 
@@ -105,6 +114,7 @@ void setup() {
   Serial.print("Connecting to Wi-Fi");
 
   while (WiFi.status() != WL_CONNECTED) {
+
     delay(500);
     Serial.print(".");
   }
@@ -125,28 +135,36 @@ void setup() {
     "time.nist.gov"
   );
 
-  Serial.println("Waiting for time synchronization...");
+  Serial.println("Synchronizing time...");
 
   struct tm timeinfo;
 
   if (getLocalTime(&timeinfo)) {
+
     Serial.println("Time synchronized.");
+
+    Serial.print("Current Date/Time: ");
     Serial.println(getDateTime());
+
   } else {
+
     Serial.println("Time synchronization failed.");
   }
 
   // ===================================================
-  // 4. Setup Arduino OTA
+  // 4. Arduino OTA
   // ===================================================
   ArduinoOTA.setHostname("esp32-led-counter");
 
   ArduinoOTA.onStart([]() {
+
     Serial.println("Start OTA Update");
   });
 
   ArduinoOTA.onEnd([]() {
-    Serial.println("\nEnd OTA Update");
+
+    Serial.println();
+    Serial.println("End OTA Update");
   });
 
   ArduinoOTA.onProgress([](unsigned int progress, unsigned int total) {
@@ -155,7 +173,6 @@ void setup() {
       "Progress: %u%%\r",
       (progress / (total / 100))
     );
-
   });
 
   ArduinoOTA.onError([](ota_error_t error) {
@@ -188,9 +205,9 @@ void setup() {
   Serial.println("Web server started.");
 
   Serial.println();
-  Serial.println("=================================");
+  Serial.println("======================================");
   Serial.println("SYSTEM READY");
-  Serial.println("=================================");
+  Serial.println("======================================");
 }
 
 // =====================================================
@@ -204,34 +221,40 @@ void loop() {
   ArduinoOTA.handle();
 
   // ===================================================
-  // VERSION 1
-  // LED blinks every 1 second
+  // VERSION 2
+  // Two LEDs blink simultaneously every 500 ms
   // ===================================================
   static unsigned long lastToggleTime = 0;
 
-  if (millis() - lastToggleTime >= 1000) {
+  if (millis() - lastToggleTime >= 500) {
 
     lastToggleTime = millis();
 
-    bool currentState = digitalRead(LED_PIN);
+    bool currentState = digitalRead(LED1_PIN);
 
-    digitalWrite(LED_PIN, !currentState);
+    // Both LEDs receive the same state
+    digitalWrite(LED1_PIN, !currentState);
+    digitalWrite(LED2_PIN, !currentState);
   }
 
   // ===================================================
   // LED COUNTER
+  // Count only LED 1 so one blink = one count
   // ===================================================
-  bool currentLedState = digitalRead(LED_PIN);
+  bool currentLedState = digitalRead(LED1_PIN);
 
-  // Detect OFF → ON
+  // Detect OFF -> ON
   if (currentLedState && !lastLedState) {
 
     ledOnCount++;
 
     // Save counter to ESP32 flash
-    preferences.putULong("counter", ledOnCount);
+    preferences.putULong(
+      "counter",
+      ledOnCount
+    );
 
-    Serial.print("LED turned ON! Total activations: ");
+    Serial.print("LEDs turned ON! Total activations: ");
     Serial.println(ledOnCount);
   }
 
@@ -259,12 +282,12 @@ void loop() {
 
           if (currentLine.length() == 0) {
 
-            // =================================================
+            // =========================================
             // RESET COUNTER
-            // =================================================
+            // =========================================
             if (requestString.indexOf("GET /reset") != -1) {
 
-              ledOnCount = 50;
+              ledOnCount = 0;
 
               preferences.putULong(
                 "counter",
@@ -272,21 +295,21 @@ void loop() {
               );
 
               Serial.println(
-                "Counter reset to 50 via dashboard!"
+                "Counter reset to 0 via dashboard!"
               );
             }
 
-            // =================================================
+            // =========================================
             // HTTP RESPONSE
-            // =================================================
+            // =========================================
             client.println("HTTP/1.1 200 OK");
             client.println("Content-type:text/html");
             client.println("Connection: close");
             client.println();
 
-            // =================================================
-            // DASHBOARD HTML
-            // =================================================
+            // =========================================
+            // HTML
+            // =========================================
             client.println("<!DOCTYPE html>");
             client.println("<html>");
 
@@ -297,6 +320,7 @@ void loop() {
               "content=\"width=device-width, initial-scale=1\">"
             );
 
+            // Refresh every 5 seconds
             client.println(
               "<meta http-equiv=\"refresh\" content=\"5\">"
             );
@@ -305,9 +329,9 @@ void loop() {
               "<title>ESP32 LED Dashboard</title>"
             );
 
-            // =================================================
+            // =========================================
             // CSS
-            // =================================================
+            // =========================================
             client.println("<style>");
 
             client.println(
@@ -326,7 +350,7 @@ void loop() {
               "border-radius: 15px;"
               "box-shadow: 0px 4px 15px rgba(0,0,0,0.1);"
               "display: inline-block;"
-              "min-width: 300px;"
+              "min-width: 330px;"
               "}"
             );
 
@@ -336,6 +360,34 @@ void loop() {
               "}"
             );
 
+            // =========================================
+            // TABLE
+            // =========================================
+            client.println(
+              "table {"
+              "margin: 20px auto;"
+              "border-collapse: collapse;"
+              "width: 100%;"
+              "}"
+            );
+
+            client.println(
+              "th, td {"
+              "border: 1px solid #ccc;"
+              "padding: 10px;"
+              "text-align: center;"
+              "}"
+            );
+
+            client.println(
+              "th {"
+              "background-color: #eeeeee;"
+              "}"
+            );
+
+            // =========================================
+            // COUNTER
+            // =========================================
             client.println(
               ".counter {"
               "font-size: 60px;"
@@ -345,20 +397,9 @@ void loop() {
               "}"
             );
 
-            client.println(
-              ".info {"
-              "font-size: 18px;"
-              "margin: 10px;"
-              "color: #444;"
-              "}"
-            );
-
-            client.println(
-              ".label {"
-              "font-weight: bold;"
-              "}"
-            );
-
+            // =========================================
+            // BUTTON
+            // =========================================
             client.println(
               ".btn {"
               "padding: 10px 20px;"
@@ -388,9 +429,9 @@ void loop() {
 
             client.println("</head>");
 
-            // =================================================
+            // =========================================
             // BODY
-            // =================================================
+            // =========================================
             client.println("<body>");
 
             client.println("<div class=\"card\">");
@@ -399,41 +440,42 @@ void loop() {
               "<h1>ESP32 LED Dashboard</h1>"
             );
 
-            // =================================================
-            // VERSION
-            // =================================================
-            client.println(
-              "<div class=\"info\">"
-              "<span class=\"label\">Version:</span> "
-              + String(VERSION) +
-              "</div>"
-            );
+            // =========================================
+            // VERSION TABLE
+            // =========================================
+            client.println("<table>");
 
-            // =================================================
-            // BUILD
-            // =================================================
-            client.println(
-              "<div class=\"info\">"
-              "<span class=\"label\">Build:</span> "
-              + String(BUILD_NUMBER) +
-              "</div>"
-            );
+            client.println("<tr>");
 
-            // =================================================
-            // DATE AND TIME
-            // =================================================
-            client.println(
-              "<div class=\"info\">"
-              "<span class=\"label\">Date / Time:</span><br>"
-              + getDateTime() +
-              "</div>"
-            );
+            client.println("<th>Version</th>");
+            client.println("<th>Build</th>");
+            client.println("<th>Date Time</th>");
 
-            // =================================================
+            client.println("</tr>");
+
+            client.println("<tr>");
+
+            client.print("<td>");
+            client.print(VERSION);
+            client.println("</td>");
+
+            client.print("<td>");
+            client.print(BUILD_NUMBER);
+            client.println("</td>");
+
+            client.print("<td>");
+            client.print(getDateTime());
+            client.println("</td>");
+
+            client.println("</tr>");
+
+            client.println("</table>");
+
+            // =========================================
             // COUNTER
-            // =================================================
+            // =========================================
             client.println(
-              "<p>Total times LED turned ON:</p>"
+              "<p>Total times LEDs turned ON:</p>"
             );
 
             client.print(
@@ -444,9 +486,9 @@ void loop() {
 
             client.println("</div>");
 
-            // =================================================
+            // =========================================
             // BUTTONS
-            // =================================================
+            // =========================================
             client.println("<p>");
 
             client.println(
@@ -460,7 +502,7 @@ void loop() {
             client.println(
               "<a href=\"/reset\">"
               "<button class=\"btn btn-reset\">"
-              "Reset to 50"
+              "Reset Counter"
               "</button>"
               "</a>"
             );
