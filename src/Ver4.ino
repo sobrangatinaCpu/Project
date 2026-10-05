@@ -6,18 +6,10 @@
 #include <time.h>
 
 // =====================================================
-// VERSION INFORMATION
+// VERSION
 // =====================================================
-const char* VERSION = "3.0.0";
-const int BUILD_NUMBER = 3;
-
-// Version 1 information
-const char* VERSION_1_DATE = "2026-10-05 17:48:09 PHT";
-
-// Version descriptions
-const char* VERSION_1_CHANGE = "Initial working version";
-const char* VERSION_2_CHANGE = "Dual LED 500ms blink";
-const char* VERSION_3_CHANGE = "Bug fix: corrected LED counter detection";
+const char* VERSION = "4.0.0";
+const int BUILD_NUMBER = 4;
 
 // =====================================================
 // WIFI
@@ -26,10 +18,19 @@ const char* ssid = "PLDT FIBR 5G";
 const char* password = "cheese_91125";
 
 // =====================================================
-// LED PINS
+// FIVE LED PINS
 // =====================================================
-const int LED1_PIN = 2;
-const int LED2_PIN = 4;
+// LED 1 = GPIO 2
+// LED 2 = GPIO 4
+// LED 3 = GPIO 5
+// LED 4 = GPIO 18
+// LED 5 = GPIO 19
+
+const int ledPins[] = {
+  2, 4, 18, 19, 22
+};
+
+const int LED_COUNT = 5;
 
 // =====================================================
 // OBJECTS
@@ -38,10 +39,21 @@ Preferences preferences;
 WiFiServer server(80);
 
 // =====================================================
-// LED COUNTER
+// COUNTER
 // =====================================================
-unsigned long ledOnCount = 0;
-bool lastLedState = LOW;
+// Version 4 starts the counter at 5.
+unsigned long ledOnCount = 5;
+
+// =====================================================
+// CHASER
+// =====================================================
+int currentLED = 0;
+int direction = 1;
+
+unsigned long lastChaseTime = 0;
+
+// 500 milliseconds between LEDs
+const unsigned long CHASE_DELAY = 500;
 
 // =====================================================
 // PHILIPPINE TIME
@@ -50,12 +62,7 @@ const long GMT_OFFSET_SEC = 8 * 3600;
 const int DAYLIGHT_OFFSET_SEC = 0;
 
 // =====================================================
-// VERSION HISTORY
-// =====================================================
-#define MAX_HISTORY 10
-
-// =====================================================
-// GET PHILIPPINE DATE AND TIME
+// DATE / TIME
 // =====================================================
 String getDateTime() {
 
@@ -78,119 +85,32 @@ String getDateTime() {
 }
 
 // =====================================================
-// SAVE CURRENT VERSION
+// TURN ALL LEDS OFF
 // =====================================================
-void saveCurrentVersion() {
+void allLEDsOff() {
 
-  int historyCount = preferences.getInt(
-    "historyCount",
-    0
-  );
-
-  // Check if this version already exists
-  for (int i = 1; i <= historyCount; i++) {
-
-    String versionKey = "ver" + String(i);
-    String buildKey = "build" + String(i);
-
-    String storedVersion = preferences.getString(
-      versionKey.c_str(),
-      ""
+  for (int i = 0; i < LED_COUNT; i++) {
+    digitalWrite(
+      ledPins[i],
+      LOW
     );
-
-    int storedBuild = preferences.getInt(
-      buildKey.c_str(),
-      0
-    );
-
-    if (
-      storedVersion == VERSION &&
-      storedBuild == BUILD_NUMBER
-    ) {
-      Serial.println(
-        "Version already exists in history."
-      );
-
-      return;
-    }
   }
+}
 
-  if (historyCount >= MAX_HISTORY) {
-    Serial.println(
-      "Version history is full."
-    );
+// =====================================================
+// SHOW CURRENT CHASER LED
+// =====================================================
+void showChaserLED() {
 
-    return;
-  }
+  allLEDsOff();
 
-  historyCount++;
-
-  String versionKey = "ver" + String(historyCount);
-  String buildKey = "build" + String(historyCount);
-  String dateKey = "date" + String(historyCount);
-  String changeKey = "change" + String(historyCount);
-
-  preferences.putString(
-    versionKey.c_str(),
-    VERSION
+  digitalWrite(
+    ledPins[currentLED],
+    HIGH
   );
 
-  preferences.putInt(
-    buildKey.c_str(),
-    BUILD_NUMBER
-  );
-
-  preferences.putString(
-    dateKey.c_str(),
-    getDateTime()
-  );
-
-  preferences.putString(
-    changeKey.c_str(),
-    VERSION_3_CHANGE
-  );
-
-  preferences.putInt(
-    "historyCount",
-    historyCount
-  );
-
-  Serial.println();
-  Serial.println(
-    "======================================"
-  );
-
-  Serial.println(
-    "VERSION SAVED"
-  );
-
-  Serial.print(
-    "Version: "
-  );
-
-  Serial.println(
-    VERSION
-  );
-
-  Serial.print(
-    "Build: "
-  );
-
-  Serial.println(
-    BUILD_NUMBER
-  );
-
-  Serial.print(
-    "Date/Time: "
-  );
-
-  Serial.println(
-    getDateTime()
-  );
-
-  Serial.println(
-    "======================================"
-  );
+  Serial.print("Chaser LED: ");
+  Serial.println(currentLED + 1);
 }
 
 // =====================================================
@@ -203,25 +123,19 @@ void setup() {
   // ===================================================
   // LED SETUP
   // ===================================================
-  pinMode(
-    LED1_PIN,
-    OUTPUT
-  );
 
-  pinMode(
-    LED2_PIN,
-    OUTPUT
-  );
+  for (int i = 0; i < LED_COUNT; i++) {
 
-  digitalWrite(
-    LED1_PIN,
-    LOW
-  );
+    pinMode(
+      ledPins[i],
+      OUTPUT
+    );
 
-  digitalWrite(
-    LED2_PIN,
-    LOW
-  );
+    digitalWrite(
+      ledPins[i],
+      LOW
+    );
+  }
 
   // ===================================================
   // PREFERENCES
@@ -231,29 +145,30 @@ void setup() {
     false
   );
 
-  ledOnCount = preferences.getULong(
-    "counter",
-    0
-  );
+  // Version 4 counter starts at 5.
+  // Do NOT load the previous version's counter.
+  ledOnCount = 5;
 
-  lastLedState = digitalRead(
-    LED1_PIN
+  preferences.putULong(
+    "counter",
+    ledOnCount
   );
 
   // ===================================================
   // SERIAL INFORMATION
   // ===================================================
+
   Serial.println();
   Serial.println(
-    "======================================"
+    "================================"
   );
 
   Serial.println(
-    "ESP32 LED COUNTER"
+    "ESP32 LED DASHBOARD"
   );
 
   Serial.println(
-    "======================================"
+    "================================"
   );
 
   Serial.print(
@@ -273,7 +188,15 @@ void setup() {
   );
 
   Serial.print(
-    "Counter loaded: "
+    "LED count: "
+  );
+
+  Serial.println(
+    LED_COUNT
+  );
+
+  Serial.print(
+    "Counter: "
   );
 
   Serial.println(
@@ -281,8 +204,15 @@ void setup() {
   );
 
   // ===================================================
+  // SHOW FIRST LED
+  // ===================================================
+
+  showChaserLED();
+
+  // ===================================================
   // WIFI
   // ===================================================
+
   WiFi.mode(
     WIFI_STA
   );
@@ -301,7 +231,6 @@ void setup() {
   ) {
 
     delay(500);
-
     Serial.print(".");
   }
 
@@ -322,6 +251,7 @@ void setup() {
   // ===================================================
   // PHILIPPINE TIME
   // ===================================================
+
   configTime(
     GMT_OFFSET_SEC,
     DAYLIGHT_OFFSET_SEC,
@@ -329,39 +259,20 @@ void setup() {
     "time.nist.gov"
   );
 
-  Serial.println(
-    "Synchronizing Philippine time..."
+  delay(1000);
+
+  Serial.print(
+    "Current PHT: "
   );
 
-  struct tm timeinfo;
-
-  if (
-    getLocalTime(&timeinfo)
-  ) {
-
-    Serial.print(
-      "Current PHT: "
-    );
-
-    Serial.println(
-      getDateTime()
-    );
-
-  } else {
-
-    Serial.println(
-      "Could not synchronize time."
-    );
-  }
-
-  // ===================================================
-  // SAVE VERSION 3
-  // ===================================================
-  saveCurrentVersion();
+  Serial.println(
+    getDateTime()
+  );
 
   // ===================================================
   // OTA
   // ===================================================
+
   ArduinoOTA.setHostname(
     "esp32-led-counter"
   );
@@ -371,14 +282,15 @@ void setup() {
     Serial.println(
       "Start OTA Update"
     );
+
   });
 
   ArduinoOTA.onEnd([]() {
 
-    Serial.println();
     Serial.println(
-      "End OTA Update"
+      "\nEnd OTA Update"
     );
+
   });
 
   ArduinoOTA.onProgress(
@@ -386,9 +298,10 @@ void setup() {
        unsigned int total) {
 
       Serial.printf(
-        "OTA Progress: %u%%\r",
-        (progress / (total / 100))
+        "Progress: %u%%\r",
+        progress * 100 / total
       );
+
     }
   );
 
@@ -396,7 +309,7 @@ void setup() {
     [](ota_error_t error) {
 
       Serial.printf(
-        "OTA Error[%u]: ",
+        "Error[%u]: ",
         error
       );
 
@@ -440,6 +353,7 @@ void setup() {
           "End Failed"
         );
       }
+
     }
   );
 
@@ -448,23 +362,15 @@ void setup() {
   // ===================================================
   // WEB SERVER
   // ===================================================
+
   server.begin();
 
   Serial.println(
     "Web server started."
   );
 
-  Serial.println();
   Serial.println(
-    "======================================"
-  );
-
-  Serial.println(
-    "SYSTEM READY"
-  );
-
-  Serial.println(
-    "======================================"
+    "System ready."
   );
 }
 
@@ -473,76 +379,50 @@ void setup() {
 // =====================================================
 void loop() {
 
-  // ===================================================
-  // OTA
-  // ===================================================
   ArduinoOTA.handle();
 
   // ===================================================
-  // TWO LEDS BLINK TOGETHER EVERY 500ms
+  // LED CHASER
   // ===================================================
-  static unsigned long lastToggleTime = 0;
 
   if (
-    millis() - lastToggleTime >= 500
+    millis() - lastChaseTime >= CHASE_DELAY
   ) {
 
-    lastToggleTime = millis();
+    lastChaseTime = millis();
 
-    bool newState = !digitalRead(
-      LED1_PIN
-    );
+    // Move to next LED
+    currentLED += direction;
 
-    digitalWrite(
-      LED1_PIN,
-      newState
-    );
-
-    digitalWrite(
-      LED2_PIN,
-      newState
-    );
-  }
-
-  // ===================================================
-  // VERSION 3 BUG FIX
-  // COUNT ONLY OFF -> ON TRANSITION
-  // ===================================================
-  bool currentLedState = digitalRead(
-    LED1_PIN
-  );
-
-  if (
-    currentLedState != lastLedState
-  ) {
-
+    // Reached the right side
     if (
-      currentLedState == HIGH
+      currentLED >= LED_COUNT - 1
     ) {
 
-      ledOnCount++;
+      currentLED = LED_COUNT - 1;
 
-      preferences.putULong(
-        "counter",
-        ledOnCount
-      );
-
-      Serial.print(
-        "Bug Fix: LED activation counted. Total: "
-      );
-
-      Serial.println(
-        ledOnCount
-      );
+      direction = -1;
     }
 
-    lastLedState = currentLedState;
+    // Reached the left side
+    else if (
+      currentLED <= 0
+    ) {
+
+      currentLED = 0;
+
+      direction = 1;
+    }
+
+    showChaserLED();
   }
 
   // ===================================================
   // WEB SERVER
   // ===================================================
-  WiFiClient client = server.available();
+
+  WiFiClient client =
+    server.available();
 
   if (client) {
 
@@ -557,7 +437,8 @@ void loop() {
         client.available()
       ) {
 
-        char c = client.read();
+        char c =
+          client.read();
 
         requestString += c;
 
@@ -572,6 +453,7 @@ void loop() {
             // =========================================
             // RESET COUNTER
             // =========================================
+
             if (
               requestString.indexOf(
                 "GET /reset"
@@ -591,8 +473,9 @@ void loop() {
             }
 
             // =========================================
-            // HTTP HEADERS
+            // HTTP RESPONSE
             // =========================================
+
             client.println(
               "HTTP/1.1 200 OK"
             );
@@ -610,6 +493,7 @@ void loop() {
             // =========================================
             // HTML
             // =========================================
+
             client.println(
               "<!DOCTYPE html>"
             );
@@ -635,6 +519,7 @@ void loop() {
             // =========================================
             // CSS
             // =========================================
+
             client.println(
               "<style>"
               "body{"
@@ -650,7 +535,7 @@ void loop() {
               "box-shadow:0 4px 15px "
               "rgba(0,0,0,.1);"
               "display:inline-block;"
-              "min-width:450px;"
+              "min-width:500px;"
               "}"
               "h1{color:#333;}"
               "table{"
@@ -670,6 +555,10 @@ void loop() {
               "font-weight:bold;"
               "color:#007bff;"
               "margin:20px;"
+              "}"
+              ".chaser{"
+              "font-size:18px;"
+              "font-weight:bold;"
               "}"
               ".btn{"
               "padding:10px 20px;"
@@ -705,6 +594,7 @@ void loop() {
             // =========================================
             // TITLE
             // =========================================
+
             client.println(
               "<h1>"
               "ESP32 LED Dashboard"
@@ -712,9 +602,10 @@ void loop() {
             );
 
             // =========================================
-            // CURRENT VERSION
+            // VERSION INFORMATION
             // =========================================
-            client.println(
+
+            client.print(
               "<p><b>Current Version:</b> "
             );
 
@@ -726,7 +617,7 @@ void loop() {
               "</p>"
             );
 
-            client.println(
+            client.print(
               "<p><b>Build:</b> "
             );
 
@@ -738,9 +629,20 @@ void loop() {
               "</p>"
             );
 
+            client.println(
+              "<p><b>LEDs:</b> 5</p>"
+            );
+
+            client.println(
+              "<p class=\"chaser\">"
+              "Chaser: LEFT → RIGHT → LEFT"
+              "</p>"
+            );
+
             // =========================================
             // VERSION HISTORY
             // =========================================
+
             client.println(
               "<h2>Version History</h2>"
             );
@@ -758,9 +660,8 @@ void loop() {
               "</tr>"
             );
 
-            // =========================================
-            // VERSION 1
-            // =========================================
+            // Version 1
+
             client.println(
               "<tr>"
               "<td>1.0.0</td>"
@@ -770,236 +671,38 @@ void loop() {
               "</tr>"
             );
 
-            // =========================================
-            // STORED VERSION HISTORY
-            // =========================================
-            int historyCount = preferences.getInt(
-              "historyCount",
-              0
+            // Version 2
+
+            client.println(
+              "<tr>"
+              "<td>2.0.0</td>"
+              "<td>2</td>"
+              "<td>2026-10-05</td>"
+              "<td>Dual LED 500ms blink</td>"
+              "</tr>"
             );
 
-            for (
-              int i = 1;
-              i <= historyCount;
-              i++
-            ) {
+            // Version 3
 
-              String versionKey =
-                "ver" + String(i);
+            client.println(
+              "<tr>"
+              "<td>3.0.0</td>"
+              "<td>3</td>"
+              "<td>2026-10-05</td>"
+              "<td>Bug fix: corrected LED counter detection</td>"
+              "</tr>"
+            );
 
-              String buildKey =
-                "build" + String(i);
+            // Version 4
 
-              String dateKey =
-                "date" + String(i);
-
-              String changeKey =
-                "change" + String(i);
-
-              String storedVersion =
-                preferences.getString(
-                  versionKey.c_str(),
-                  ""
-                );
-
-              int storedBuild =
-                preferences.getInt(
-                  buildKey.c_str(),
-                  0
-                );
-
-              String storedDate =
-                preferences.getString(
-                  dateKey.c_str(),
-                  "Unknown"
-                );
-
-              String storedChange =
-                preferences.getString(
-                  changeKey.c_str(),
-                  ""
-                );
-
-              // =======================================
-              // FIX OLD VERSION 2 DESCRIPTION
-              // =======================================
-              if (
-                storedVersion == "2.0.0"
-              ) {
-
-                storedChange =
-                  "Dual LED 500ms blink";
-              }
-
-              // =======================================
-              // FIX VERSION 3 DESCRIPTION
-              // =======================================
-              if (
-                storedVersion == "3.0.0"
-              ) {
-
-                storedChange =
-                  "Bug fix: corrected LED counter detection";
-              }
-
-              // Version 1 is displayed manually above
-              if (
-                storedVersion == "1.0.0"
-              ) {
-
-                continue;
-              }
-
-              client.print(
-                "<tr>"
-              );
-
-              client.print(
-                "<td>"
-              );
-
-              client.print(
-                storedVersion
-              );
-
-              client.print(
-                "</td>"
-              );
-
-              client.print(
-                "<td>"
-              );
-
-              client.print(
-                storedBuild
-              );
-
-              client.print(
-                "</td>"
-              );
-
-              client.print(
-                "<td>"
-              );
-
-              client.print(
-                storedDate
-              );
-
-              client.print(
-                "</td>"
-              );
-
-              client.print(
-                "<td>"
-              );
-
-              client.print(
-                storedChange
-              );
-
-              client.print(
-                "</td>"
-              );
-
-              client.println(
-                "</tr>"
-              );
-            }
-
-            // =========================================
-            // SHOW CURRENT VERSION IF NOT STORED
-            // =========================================
-            bool currentVersionShown = false;
-
-            for (
-              int i = 1;
-              i <= historyCount;
-              i++
-            ) {
-
-              String storedVersion =
-                preferences.getString(
-                  ("ver" + String(i)).c_str(),
-                  ""
-                );
-
-              int storedBuild =
-                preferences.getInt(
-                  ("build" + String(i)).c_str(),
-                  0
-                );
-
-              if (
-                storedVersion == VERSION &&
-                storedBuild == BUILD_NUMBER
-              ) {
-
-                currentVersionShown = true;
-                break;
-              }
-            }
-
-            if (
-              !currentVersionShown
-            ) {
-
-              client.print(
-                "<tr>"
-              );
-
-              client.print(
-                "<td>"
-              );
-
-              client.print(
-                VERSION
-              );
-
-              client.print(
-                "</td>"
-              );
-
-              client.print(
-                "<td>"
-              );
-
-              client.print(
-                BUILD_NUMBER
-              );
-
-              client.print(
-                "</td>"
-              );
-
-              client.print(
-                "<td>"
-              );
-
-              client.print(
-                getDateTime()
-              );
-
-              client.print(
-                "</td>"
-              );
-
-              client.print(
-                "<td>"
-              );
-
-              client.print(
-                VERSION_3_CHANGE
-              );
-
-              client.print(
-                "</td>"
-              );
-
-              client.println(
-                "</tr>"
-              );
-            }
+            client.println(
+              "<tr>"
+              "<td>4.0.0</td>"
+              "<td>4</td>"
+              "<td>2026-10-05</td>"
+              "<td>5 LED racing/chaser effect</td>"
+              "</tr>"
+            );
 
             client.println(
               "</table>"
@@ -1008,9 +711,10 @@ void loop() {
             // =========================================
             // COUNTER
             // =========================================
+
             client.println(
               "<p>"
-              "Total times LEDs turned ON:"
+              "LED Count:"
               "</p>"
             );
 
@@ -1029,6 +733,7 @@ void loop() {
             // =========================================
             // BUTTONS
             // =========================================
+
             client.println(
               "<a href=\"/\">"
               "<button class=\"btn refresh\">"
@@ -1048,6 +753,7 @@ void loop() {
             // =========================================
             // END HTML
             // =========================================
+
             client.println(
               "</div>"
             );
